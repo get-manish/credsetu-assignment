@@ -1,0 +1,52 @@
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: miniledger
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-miniledger}
+      POSTGRES_DB: miniledger
+    ports:
+      - "5432:5432"
+    volumes:
+      - miniledger_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U miniledger -d miniledger"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  migrate-seed:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: build
+    restart: "no"
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgresql://miniledger:${POSTGRES_PASSWORD:-miniledger}@db:5432/miniledger
+    depends_on:
+      db:
+        condition: service_healthy
+    command: >
+      sh -c "npm run migrate && npm run seed"
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: production
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      DATABASE_URL: postgresql://miniledger:${POSTGRES_PASSWORD:-miniledger}@db:5432/miniledger
+    ports:
+      - "4000:4000"
+    depends_on:
+      migrate-seed:
+        condition: service_completed_successfully
+
+volumes:
+  miniledger_pgdata:
